@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import html2canvas from 'html2canvas';
+import { toPng, toBlob } from 'html-to-image';
 import { Calendar, Clock, MapPin, Ticket, Sun, CloudRain, Sunset, Snowflake, Zap, Moon, Sparkles, QrCode } from 'lucide-react';
 import { PosterDesignState } from '../types';
 
@@ -340,140 +340,50 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
   );
 };
 
-// Helper OKLCH/modern color to sRGB converter for html2canvas compatibility
-function convertOklchToRgb(colorStr: string, ctx?: CanvasRenderingContext2D | null): string {
-  if (ctx) {
-    try {
-      ctx.fillStyle = '#010203';
-      ctx.fillStyle = colorStr;
-      if (ctx.fillStyle && ctx.fillStyle !== '#010203') {
-        return ctx.fillStyle;
-      }
-    } catch {
-      // fallback to math parser
-    }
-  }
-
-  try {
-    const match = colorStr.match(/oklch\(\s*([\d.%]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.%]+))?\s*\)/i);
-    if (match) {
-      const lStr = match[1];
-      const cStr = match[2];
-      const hStr = match[3];
-      const aStr = match[4];
-
-      const l = lStr.endsWith('%') ? parseFloat(lStr) / 100 : parseFloat(lStr);
-      const c = parseFloat(cStr);
-      const h = parseFloat(hStr);
-      const a = aStr ? (aStr.endsWith('%') ? parseFloat(aStr) / 100 : parseFloat(aStr)) : 1;
-
-      const hRad = (h * Math.PI) / 180;
-      const a_lab = c * Math.cos(hRad);
-      const b_lab = c * Math.sin(hRad);
-
-      const l_ = l + 0.3963377774 * a_lab + 0.2158037573 * b_lab;
-      const m_ = l - 0.1055613458 * a_lab - 0.0638541728 * b_lab;
-      const s_ = l - 0.0894841775 * a_lab - 1.291485548 * b_lab;
-
-      const l3 = l_ * l_ * l_;
-      const m3 = m_ * m_ * m_;
-      const s3 = s_ * s_ * s_;
-
-      const rLinear = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
-      const gLinear = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
-      const bLinear = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
-
-      const gamma = (v: number) => {
-        v = Math.max(0, Math.min(1, v));
-        return v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
-      };
-
-      const r8 = Math.round(gamma(rLinear) * 255);
-      const g8 = Math.round(gamma(gLinear) * 255);
-      const b8 = Math.round(gamma(bLinear) * 255);
-
-      if (a < 1) {
-        return `rgba(${r8}, ${g8}, ${b8}, ${a.toFixed(2)})`;
-      }
-      return `rgb(${r8}, ${g8}, ${b8})`;
-    }
-  } catch {
-    // ignore
-  }
-
-  return 'rgb(128, 128, 128)';
-}
-
-// Helper function to export canvas to PNG high-res Blob or Data URL
+// Helper function to export canvas to PNG high-res Data URL using html-to-image
 export async function exportPosterToPng(dpiScale: number = 2): Promise<string> {
   const canvasElement = document.getElementById('poster-render-canvas');
   if (!canvasElement) {
     throw new Error('Poster canvas element not found');
   }
 
-  const dummyCanvas = document.createElement('canvas');
-  const ctx = dummyCanvas.getContext('2d');
+  try {
+    const dataUrl = await toPng(canvasElement, {
+      pixelRatio: dpiScale,
+      cacheBust: true,
+      quality: 1.0,
+      skipAutoScale: false,
+    });
+    return dataUrl;
+  } catch (err: any) {
+    console.warn('html-to-image toPng initial attempt failed, trying fallback:', err);
+    const dataUrl = await toPng(canvasElement, {
+      pixelRatio: 1.5,
+      cacheBust: false,
+    });
+    return dataUrl;
+  }
+}
 
-  const convertColorMatch = (colorStr: string): string => {
-    return convertOklchToRgb(colorStr, ctx);
-  };
-
-  const canvas = await html2canvas(canvasElement, {
-    scale: dpiScale,
-    useCORS: true,
-    allowTaint: false,
-    backgroundColor: null,
-    logging: false,
-    imageTimeout: 10000,
-    onclone: (clonedDoc, element) => {
-      // Ensure the cloned canvas element is visible and properly laid out
-      if (element) {
-        element.style.transform = 'none';
-      }
-
-      // 1. Process all <style> elements in clonedDoc to clean modern color functions
-      const styleElements = clonedDoc.querySelectorAll('style');
-      styleElements.forEach((styleEl) => {
-        if (styleEl.textContent && /oklch|oklab|color-mix|lab|lch/i.test(styleEl.textContent)) {
-          styleEl.textContent = styleEl.textContent.replace(
-            /(oklch|oklab|color-mix|lab|lch)\([^)]+\)/gi,
-            (match) => convertColorMatch(match)
-          );
-        }
-      });
-
-      // 2. Process all element inline styles or style attributes
-      const allElements = clonedDoc.querySelectorAll('*');
-      allElements.forEach((el) => {
-        const htmlEl = el as HTMLElement;
-        if (htmlEl.style && htmlEl.style.cssText && /oklch|oklab|color-mix|lab|lch/i.test(htmlEl.style.cssText)) {
-          htmlEl.style.cssText = htmlEl.style.cssText.replace(
-            /(oklch|oklab|color-mix|lab|lch)\([^)]+\)/gi,
-            (match) => convertColorMatch(match)
-          );
-        }
-
-        // Set crossOrigin on all image elements to avoid tainting
-        if (el.tagName === 'IMG') {
-          (el as HTMLImageElement).crossOrigin = 'anonymous';
-        }
-      });
-    }
-  });
+// Helper function to export canvas to PNG high-res Blob directly
+export async function exportPosterToBlob(dpiScale: number = 2): Promise<Blob> {
+  const canvasElement = document.getElementById('poster-render-canvas');
+  if (!canvasElement) {
+    throw new Error('Poster canvas element not found');
+  }
 
   try {
-    return canvas.toDataURL('image/png', 1.0);
-  } catch (err) {
-    console.warn('Canvas toDataURL failed directly, attempting fallback canvas drawing:', err);
-    // Fallback: draw onto clean un-tainted canvas
-    const fallbackCanvas = document.createElement('canvas');
-    fallbackCanvas.width = canvas.width;
-    fallbackCanvas.height = canvas.height;
-    const fCtx = fallbackCanvas.getContext('2d');
-    if (fCtx) {
-      fCtx.drawImage(canvas, 0, 0);
-      return fallbackCanvas.toDataURL('image/png', 1.0);
-    }
-    throw err;
+    const blob = await toBlob(canvasElement, {
+      pixelRatio: dpiScale,
+      cacheBust: true,
+      quality: 1.0,
+    });
+    if (blob) return blob;
+    throw new Error('Blob generation returned null');
+  } catch (err: any) {
+    console.warn('html-to-image toBlob failed, falling back to dataUrl conversion:', err);
+    const dataUrl = await exportPosterToPng(dpiScale);
+    const res = await fetch(dataUrl);
+    return await res.blob();
   }
 }
