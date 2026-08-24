@@ -1,0 +1,6 @@
+{
+  "name": "Event Poster Designer AI",
+  "description": "Automatic AI event poster and flyer generator with weather-adaptive color palettes, social media presets (Instagram, Facebook, Print), and PNG export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
