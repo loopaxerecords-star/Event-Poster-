@@ -7,6 +7,7 @@ export interface EventDetails {
   artist4?: string;
   date: string;
   time: string;
+  ticketUrl?: string;
   // Secondary / Optional compatibility fields
   title?: string;
   subtitle?: string;

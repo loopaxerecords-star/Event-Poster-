@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Clock, MapPin, Sparkles, Music, Mic, User } from 'lucide-react';
+import { Calendar, Clock, MapPin, Sparkles, Music, Mic, User, Ticket, Link as LinkIcon } from 'lucide-react';
 import { EventDetails } from '../types';
 
 interface EventFormProps {
@@ -179,6 +179,32 @@ export const EventForm: React.FC<EventFormProps> = ({
               placeholder="e.g. 8:00 PM - 3:00 AM"
               className="w-full bg-neutral-950 border border-neutral-800 focus:border-indigo-500/50 rounded-xl px-3.5 py-2 text-sm font-medium text-neutral-100 placeholder-neutral-600 outline-none transition-all"
             />
+          </div>
+        </div>
+
+        {/* Ticket URL Section */}
+        <div className="pt-2 border-t border-neutral-800/80">
+          <label className="block text-xs font-bold text-neutral-300 mb-1 flex items-center gap-1.5">
+            <Ticket className="w-3.5 h-3.5 text-cyan-400" />
+            Ticket URL:
+          </label>
+          <div className="relative">
+            <input
+              type="url"
+              value={details.ticketUrl || details.qrCodeLink || ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                onChange({ 
+                  ticketUrl: val,
+                  qrCodeLink: val
+                });
+              }}
+              placeholder="e.g. https://eventbrite.com/e/summer-solstice-fest"
+              className="w-full bg-neutral-950 border border-neutral-800 focus:border-indigo-500/50 rounded-xl pl-3.5 pr-9 py-2 text-sm font-medium text-neutral-100 placeholder-neutral-600 outline-none transition-all shadow-inner"
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none">
+              <LinkIcon className="w-3.5 h-3.5" />
+            </div>
           </div>
         </div>
 

@@ -7,7 +7,7 @@ interface NavbarProps {
   currentPreset: PosterPreset;
   onSelectPreset: (preset: PosterPreset) => void;
   weather: WeatherCondition | null;
-  onOpenQuickPrompt: () => void;
+  onOpenQuickPrompt?: () => void;
   onOpenSavedPosters: () => void;
   onOpenExport: () => void;
   onOpenTemplates: () => void;
@@ -35,10 +35,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-neutral-100 leading-tight">
-              PosterGen <span className="text-indigo-400 font-normal">AI</span>
+              PosterGen <span className="text-indigo-400 font-normal">Studio</span>
             </h1>
             <p className="text-[11px] text-neutral-500 hidden sm:block">
-              Bento Grid Event Poster Designer
+              Event Poster Designer
             </p>
           </div>
         </div>
@@ -83,16 +83,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <LayoutTemplate className="w-4 h-4 text-indigo-400" />
             <span className="hidden md:inline">Templates</span>
-          </button>
-
-          {/* Quick AI Wizard */}
-          <button
-            onClick={onOpenQuickPrompt}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"
-          >
-            <Sparkles className="w-4 h-4 text-indigo-200" />
-            <span className="hidden sm:inline">AI Magic Wizard</span>
-            <span className="sm:hidden">AI Prompt</span>
           </button>
 
           {/* Saved Posters */}

@@ -16,8 +16,9 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
 
   // Generate QR Code data URL when link changes
   useEffect(() => {
-    if (design.details.qrCodeLink && design.showQrCode) {
-      QRCode.toDataURL(design.details.qrCodeLink, {
+    const qrLink = design.details.ticketUrl || design.details.qrCodeLink;
+    if (qrLink && design.showQrCode) {
+      QRCode.toDataURL(qrLink, {
         width: 180,
         margin: 1,
         color: {
@@ -30,7 +31,7 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
     } else {
       setQrCodeDataUrl('');
     }
-  }, [design.details.qrCodeLink, design.showQrCode]);
+  }, [design.details.ticketUrl, design.details.qrCodeLink, design.showQrCode]);
 
   // Weather Icon renderer
   const renderWeatherIcon = () => {

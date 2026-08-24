@@ -165,22 +165,15 @@ export const StyleControls: React.FC<StyleControlsProps> = ({
             </div>
           </div>
 
-          {/* AI Image Generation Prompt Box */}
+          {/* AI Image Generation */}
           {design.bgType === 'ai_image' && (
             <div className="p-3.5 bg-neutral-950 border border-neutral-800 rounded-xl flex flex-col gap-2.5">
               <label className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-indigo-400" />
-                AI Art Prompt Generator
+                AI Art Background Generator
               </label>
-              <textarea
-                rows={2}
-                value={bgPromptInput}
-                onChange={(e) => setBgPromptInput(e.target.value)}
-                placeholder="e.g. Cyberpunk Tokyo street at night with glowing neon reflections and mist"
-                className="w-full bg-neutral-900 border border-neutral-800 focus:border-indigo-500/50 rounded-lg p-2.5 text-xs text-neutral-200 placeholder-neutral-600 outline-none resize-none"
-              />
               <button
-                onClick={() => onGenerateAiBg(bgPromptInput)}
+                onClick={() => onGenerateAiBg(bgPromptInput || `${design.details.title} ${design.details.category} abstract artistic background`)}
                 disabled={isBgGenerating}
                 className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-50"
               >
