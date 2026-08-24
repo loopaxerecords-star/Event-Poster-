@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Download, Copy, Check, X, Image as ImageIcon, Sparkles, Share2, Instagram } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Download, Copy, Check, X, Image as ImageIcon, Sparkles, Share2, Instagram, BookmarkCheck, ExternalLink } from 'lucide-react';
 import { exportPosterToPng } from './PosterCanvas';
 import { PosterDesignState } from '../types';
 
@@ -19,8 +19,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [isRendering, setIsRendering] = useState(false);
   const [renderedPngUrl, setRenderedPngUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
+  const [savedToLib, setSavedToLib] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [dpiScale, setDpiScale] = useState<number>(2); // 2x default crisp resolution
+
+  // Auto-generate PNG preview when modal opens or resolution scale changes
+  useEffect(() => {
+    if (isOpen) {
+      handleGeneratePng(dpiScale);
+    } else {
+      setRenderedPngUrl('');
+      setShareStatus(null);
+      setSavedToLib(false);
+    }
+  }, [isOpen, dpiScale]);
 
   if (!isOpen) return null;
 
@@ -38,7 +50,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const sanitizedTitle = (design.details.title || design.details.event || 'event-poster')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
+      .replace(/(^-|-$)/g, '') || 'poster';
     const fileName = `${sanitizedTitle}-${design.preset.id}.png`;
     const file = new File([blob], fileName, { type: 'image/png' });
     return { url, file, blob };
@@ -50,8 +62,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       setIsRendering(true);
       const pngUrl = await exportPosterToPng(scale);
       setRenderedPngUrl(pngUrl);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to export PNG:', err);
+      setShareStatus(`Rendering note: ${err?.message || 'Could not render poster preview'}`);
     } finally {
       setIsRendering(false);
     }
@@ -59,41 +72,73 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   // Trigger download as .png file
   const handleDownloadPng = async () => {
-    const { url } = await getPosterFile();
+    try {
+      setIsRendering(true);
+      setShareStatus('Preparing high-resolution poster file...');
+      const { file, blob } = await getPosterFile(dpiScale);
 
-    const sanitizedTitle = (design.details.title || design.details.event || 'event-poster')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = file.name;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
 
-    const fileName = `${sanitizedTitle}-${design.preset.id}-${Date.now()}.png`;
+      setTimeout(() => {
+        if (document.body.contains(a)) {
+          document.body.removeChild(a);
+        }
+        URL.revokeObjectURL(blobUrl);
+      }, 2000);
 
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+      setShareStatus(`✅ Poster saved to downloads as "${file.name}"!`);
+      onSaveToLibrary();
+      setSavedToLib(true);
+      setTimeout(() => setShareStatus(null), 5000);
+    } catch (err: any) {
+      console.error('Download error:', err);
+      setShareStatus(`⚠️ Download error: ${err?.message || 'Could not generate PNG file'}`);
+    } finally {
+      setIsRendering(false);
+    }
+  };
 
+  // Manual save to library
+  const handleManualSaveLibrary = () => {
     onSaveToLibrary();
+    setSavedToLib(true);
+    setShareStatus('Saved poster design to your in-app library!');
+    setTimeout(() => {
+      setSavedToLib(false);
+      setShareStatus(null);
+    }, 3500);
   };
 
   // Copy PNG image to clipboard
   const handleCopyToClipboard = async () => {
     try {
-      const { blob } = await getPosterFile();
+      setIsRendering(true);
+      const { blob } = await getPosterFile(dpiScale);
       
       if (navigator.clipboard && navigator.clipboard.write) {
         await navigator.clipboard.write([
           new ClipboardItem({ 'image/png': blob })
         ]);
         setCopied(true);
-        setTimeout(() => setCopied(false), 2500);
+        setShareStatus('Copied poster image directly to your clipboard!');
+        setTimeout(() => {
+          setCopied(false);
+          setShareStatus(null);
+        }, 3000);
       } else {
         alert('Clipboard image copy not supported in this browser. Please download the PNG directly.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to copy to clipboard:', err);
+      setShareStatus(`Clipboard copy: ${err?.message || 'Unsupported in current view'}`);
+    } finally {
+      setIsRendering(false);
     }
   };
 
@@ -101,13 +146,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleShareInstagram = async () => {
     try {
       setShareStatus('Preparing poster for Instagram...');
-      const { file, blob, url } = await getPosterFile();
+      const { file, blob, url } = await getPosterFile(dpiScale);
 
       // Native mobile file share (Instagram Feed / Stories appear in share sheet on iOS/Android)
       if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           title: design.details.event || design.details.title || 'Event Poster',
-          text: `🎉 ${design.details.event || design.details.title} at ${design.details.venue}!`,
+          text: `🎉 ${design.details.event || design.details.title || 'Live Event'} at ${design.details.venue || 'the venue'}!`,
           files: [file],
         });
         setShareStatus('Shared to Instagram via native share!');
@@ -127,12 +172,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       }
 
       // Auto download poster file
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = blobUrl;
       a.download = file.name;
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
+      setTimeout(() => {
+        if (document.body.contains(a)) {
+          document.body.removeChild(a);
+        }
+        URL.revokeObjectURL(blobUrl);
+      }, 2000);
 
       // Open Instagram in new tab
       window.open('https://www.instagram.com', '_blank', 'noopener,noreferrer');
@@ -143,7 +194,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           : 'Poster downloaded! Upload directly to your Instagram story or feed.'
       );
       setTimeout(() => setShareStatus(null), 5000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Instagram share error:', err);
       setShareStatus('Failed to prepare Instagram share.');
       setTimeout(() => setShareStatus(null), 3000);
@@ -154,7 +205,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleShareTwitter = async () => {
     try {
       setShareStatus('Preparing tweet composer...');
-      const { file, blob } = await getPosterFile();
+      const { file, blob } = await getPosterFile(dpiScale);
 
       const lineup = [design.details.artist1, design.details.artist2, design.details.artist3, design.details.artist4]
         .filter(Boolean)
@@ -188,7 +239,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
       setShareStatus('Opened Twitter composer! Poster image copied to clipboard — press Ctrl+V / Cmd+V to attach.');
       setTimeout(() => setShareStatus(null), 5000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Twitter share error:', err);
       setShareStatus('Failed to prepare Twitter share.');
       setTimeout(() => setShareStatus(null), 3000);
@@ -199,7 +250,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleSystemShare = async () => {
     try {
       setShareStatus('Opening system share menu...');
-      const { file } = await getPosterFile();
+      const { file } = await getPosterFile(dpiScale);
       if (navigator.share) {
         const text = `🎉 ${design.details.event || design.details.title || 'Live Event'} at ${design.details.venue || 'the venue'}!`;
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -228,8 +279,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden p-6 text-white flex flex-col gap-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn overflow-y-auto">
+      <div className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden p-6 text-white flex flex-col gap-5 my-8">
         
         {/* Close Button */}
         <button
@@ -246,7 +297,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </div>
           <div>
             <h2 className="text-xl font-extrabold text-white">
-              Export & Share Event Poster
+              Export & Save Event Poster
             </h2>
             <p className="text-xs text-slate-400">
               Preset: <span className="text-emerald-400 font-semibold">{design.preset.name}</span> ({design.preset.aspectRatioLabel})
@@ -255,7 +306,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
 
         {/* Resolution Quality Scale Picker */}
-        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between flex-wrap gap-2">
           <span className="text-xs font-semibold text-slate-300">PNG Image Resolution:</span>
           <div className="flex items-center gap-1.5">
             {[
@@ -267,7 +318,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 key={opt.scale}
                 onClick={() => {
                   setDpiScale(opt.scale);
-                  handleGeneratePng(opt.scale);
                 }}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
                   dpiScale === opt.scale
@@ -280,6 +330,34 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Rendered Preview & Direct Image View */}
+        {renderedPngUrl && (
+          <div className="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl flex items-center gap-3.5">
+            <img
+              src={renderedPngUrl}
+              alt="Rendered Poster Preview"
+              className="w-14 h-18 object-contain rounded-lg border border-slate-700 bg-black/50 shrink-0 shadow"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white truncate">
+                {design.details.title || design.details.event || 'Event Poster'}
+              </p>
+              <p className="text-[11px] text-slate-400">
+                Ready for high-res download • {dpiScale}x scale
+              </p>
+              <a
+                href={renderedPngUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 mt-1 font-medium underline underline-offset-2"
+              >
+                <ExternalLink className="w-3 h-3" />
+                View / Save full image in new tab
+              </a>
+            </div>
+          </div>
+        )}
 
         {/* Direct Social Media Sharing Buttons */}
         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
@@ -327,7 +405,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
           {/* Share Feedback Toast / Status Notice */}
           {shareStatus && (
-            <div className="p-2.5 bg-indigo-950/60 border border-indigo-500/40 rounded-lg text-xs text-indigo-200 animate-fadeIn flex items-center gap-2">
+            <div className="p-2.5 bg-indigo-950/80 border border-indigo-500/50 rounded-lg text-xs text-indigo-200 animate-fadeIn flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-indigo-400 shrink-0 animate-pulse" />
               <span>{shareStatus}</span>
             </div>
@@ -340,10 +418,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <button
             onClick={handleDownloadPng}
             disabled={isRendering}
-            className="w-full sm:flex-1 py-3 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-sm shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+            className="w-full sm:flex-1 py-3 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-sm shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50 active:scale-98"
           >
             <Download className="w-5 h-5" />
-            <span>{isRendering ? 'Rendering PNG...' : 'Download .PNG File'}</span>
+            <span>{isRendering ? 'Rendering High-Res PNG...' : 'Save & Download .PNG'}</span>
           </button>
 
           <button
@@ -355,10 +433,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <span>{copied ? 'Copied PNG!' : 'Copy PNG'}</span>
           </button>
 
+          <button
+            onClick={handleManualSaveLibrary}
+            className="w-full sm:w-auto py-3 px-3.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-xl text-sm flex items-center justify-center gap-1.5 transition-all"
+            title="Save to in-app gallery"
+          >
+            <BookmarkCheck className={`w-4 h-4 ${savedToLib ? 'text-emerald-400' : 'text-slate-400'}`} />
+            <span>{savedToLib ? 'Saved' : 'Save to Gallery'}</span>
+          </button>
+
         </div>
 
       </div>
     </div>
   );
 };
+
 

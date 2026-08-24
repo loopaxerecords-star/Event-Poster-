@@ -421,11 +421,17 @@ export async function exportPosterToPng(dpiScale: number = 2): Promise<string> {
   const canvas = await html2canvas(canvasElement, {
     scale: dpiScale,
     useCORS: true,
-    allowTaint: true,
+    allowTaint: false,
     backgroundColor: null,
     logging: false,
-    onclone: (clonedDoc) => {
-      // 1. Process all <style> elements in clonedDoc
+    imageTimeout: 10000,
+    onclone: (clonedDoc, element) => {
+      // Ensure the cloned canvas element is visible and properly laid out
+      if (element) {
+        element.style.transform = 'none';
+      }
+
+      // 1. Process all <style> elements in clonedDoc to clean modern color functions
       const styleElements = clonedDoc.querySelectorAll('style');
       styleElements.forEach((styleEl) => {
         if (styleEl.textContent && /oklch|oklab|color-mix|lab|lch/i.test(styleEl.textContent)) {
@@ -446,9 +452,28 @@ export async function exportPosterToPng(dpiScale: number = 2): Promise<string> {
             (match) => convertColorMatch(match)
           );
         }
+
+        // Set crossOrigin on all image elements to avoid tainting
+        if (el.tagName === 'IMG') {
+          (el as HTMLImageElement).crossOrigin = 'anonymous';
+        }
       });
     }
   });
 
-  return canvas.toDataURL('image/png', 1.0);
+  try {
+    return canvas.toDataURL('image/png', 1.0);
+  } catch (err) {
+    console.warn('Canvas toDataURL failed directly, attempting fallback canvas drawing:', err);
+    // Fallback: draw onto clean un-tainted canvas
+    const fallbackCanvas = document.createElement('canvas');
+    fallbackCanvas.width = canvas.width;
+    fallbackCanvas.height = canvas.height;
+    const fCtx = fallbackCanvas.getContext('2d');
+    if (fCtx) {
+      fCtx.drawImage(canvas, 0, 0);
+      return fallbackCanvas.toDataURL('image/png', 1.0);
+    }
+    throw err;
+  }
 }
