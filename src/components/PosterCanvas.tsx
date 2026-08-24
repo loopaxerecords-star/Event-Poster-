@@ -267,7 +267,7 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
                       VENUE
                     </span>
                     <span className="text-xs sm:text-sm font-extrabold block" style={{ color: palette.primaryText }}>
-                      {details.venue || 'OCEANSIDE AMPHITHEATER'}
+                      {details.venue || 'VENUE / LOCATION'}
                     </span>
                   </div>
                 </div>
@@ -282,10 +282,10 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
                   </div>
                   <div>
                     <span className="text-xs font-black tracking-wider uppercase block" style={{ color: palette.accentColor }}>
-                      {details.date || details.displayDate || 'SATURDAY, JUL 18, 2026'}
+                      {details.date || details.displayDate || 'DATE TBA'}
                     </span>
                     <span className="text-[11px] font-medium opacity-80 block" style={{ color: palette.secondaryText }}>
-                      {details.time || '8:00 PM - 3:00 AM'}
+                      {details.time || 'TIME TBA'}
                     </span>
                   </div>
                 </div>
