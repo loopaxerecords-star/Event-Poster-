@@ -1,7 +1,8 @@
-import React from 'react';
-import { Sparkles, Download, Bookmark, Sun, Smartphone, Instagram, Facebook, Printer, LayoutTemplate } from 'lucide-react';
+import React, { useState } from 'react';
+import { Sparkles, Download, Bookmark, Sun, Smartphone, Instagram, Facebook, Printer, LayoutTemplate, CloudSun, Volume2 } from 'lucide-react';
 import { PosterPreset, WeatherCondition } from '../types';
 import { POSTER_PRESETS } from '../data/presets';
+import { speakWelcomeGreeting } from '../utils/audioVoiceEngine';
 
 interface NavbarProps {
   currentPreset: PosterPreset;
@@ -11,6 +12,7 @@ interface NavbarProps {
   onOpenSavedPosters: () => void;
   onOpenExport: () => void;
   onOpenTemplates: () => void;
+  onOpenWeatherWelcome?: () => void;
   savedCount: number;
 }
 
@@ -22,8 +24,20 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSavedPosters,
   onOpenExport,
   onOpenTemplates,
+  onOpenWeatherWelcome,
   savedCount,
 }) => {
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+
+  const handleSpeak = () => {
+    setIsPlayingVoice(true);
+    speakWelcomeGreeting(
+      "Welcome, let's create the poster for your event",
+      () => setIsPlayingVoice(true),
+      () => setIsPlayingVoice(false)
+    );
+  };
+
   return (
     <header className="sticky top-0 z-40 bg-neutral-950/90 backdrop-blur-md border-b border-neutral-800 text-neutral-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
@@ -38,7 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               PosterGen <span className="text-indigo-400 font-normal">Studio</span>
             </h1>
             <p className="text-[11px] text-neutral-500 hidden sm:block">
-              Event Poster Designer
+              Atmospheric Event Poster Designer
             </p>
           </div>
         </div>
@@ -76,6 +90,30 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Right Actions */}
         <div className="flex items-center gap-2 sm:gap-3">
           
+          {/* Weather Intro Screen Replay Button */}
+          {onOpenWeatherWelcome && (
+            <button
+              onClick={onOpenWeatherWelcome}
+              className="px-2.5 py-2 bg-neutral-900 hover:bg-neutral-850 text-amber-300 rounded-xl text-xs font-semibold border border-amber-500/30 transition-all flex items-center gap-1.5 shadow-sm"
+              title="Open Weather Atmosphere & Voice Welcome Screen"
+            >
+              <CloudSun className="w-4 h-4 text-amber-400" />
+              <span className="hidden xl:inline">Weather Intro</span>
+            </button>
+          )}
+
+          {/* Quick Voice Greeting Replay */}
+          <button
+            onClick={handleSpeak}
+            className={`p-2 bg-neutral-900 hover:bg-neutral-850 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+              isPlayingVoice ? 'border-rose-500/60 text-rose-300 animate-pulse' : 'border-neutral-800 text-neutral-400 hover:text-neutral-200'
+            }`}
+            title="Play Voice Greeting: 'Welcome, let's create the poster for your event'"
+          >
+            <Volume2 className={`w-4 h-4 ${isPlayingVoice ? 'text-rose-400' : 'text-indigo-400'}`} />
+            <span className="hidden md:inline">{isPlayingVoice ? 'Speaking...' : 'Voice'}</span>
+          </button>
+
           {/* Templates Gallery Trigger */}
           <button
             onClick={onOpenTemplates}

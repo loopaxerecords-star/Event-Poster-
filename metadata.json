@@ -1,6 +1,6 @@
 {
   "name": "Event Poster Designer AI",
-  "description": "Automatic AI event poster and flyer generator with weather-adaptive color palettes, social media presets (Instagram, Facebook, Print), and PNG export.",
+  "description": "Professional event poster and flyer designer with live Google web & social media intelligence grounding, weather-adaptive palettes, Snob-Proof Art Director AI venue verification, tactile print micro-textures, custom dimensions, and high-res PNG export.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

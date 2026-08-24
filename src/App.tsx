@@ -8,12 +8,18 @@ import { QuickPromptModal } from './components/QuickPromptModal';
 import { ExportModal } from './components/ExportModal';
 import { SavedPostersModal } from './components/SavedPostersModal';
 import { TemplateGalleryModal } from './components/TemplateGalleryModal';
+import { WeatherWelcomeScreen } from './components/WeatherWelcomeScreen';
+import { CustomSizeModal } from './components/CustomSizeModal';
+import { ArtDirectorInspectorModal } from './components/ArtDirectorInspectorModal';
+import { WebSocialIntelModal } from './components/WebSocialIntelModal';
 
-import { PosterDesignState, PosterPreset, EventDetails, ColorPalette, SavedPoster } from './types';
+import { PosterDesignState, PosterPreset, EventDetails, ColorPalette, SavedPoster, WebSocialIntelResult } from './types';
 import { POSTER_PRESETS } from './data/presets';
 import { POSTER_STYLES } from './data/styles';
 import { PosterTemplate } from './data/templates';
 import { getWeatherConditionByLocationAndDate, generateWeatherPalettes } from './utils/weatherPaletteEngine';
+import { applyLayoutAdjustments } from './utils/layoutOptimizationEngine';
+import { fetchWebSocialIntelligence, applyFullInspirationToDesign } from './utils/webSocialIntelligence';
 
 const INITIAL_DETAILS: EventDetails = {
   event: '',
@@ -62,6 +68,9 @@ export default function App() {
     showCategoryBadge: true,
     showGridOverlay: false,
     borderStyle: 'thin',
+    badgePosition: 'top_split',
+    layoutDensity: 'normal',
+    autoAdaptLayout: true,
     customFontHeader: "'Bebas Neue', sans-serif",
     customFontBody: "'Inter', sans-serif",
     textScale: 1.0,
@@ -77,10 +86,19 @@ export default function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isSavedModalOpen, setIsSavedModalOpen] = useState<boolean>(false);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState<boolean>(false);
+  const [isCustomSizeModalOpen, setIsCustomSizeModalOpen] = useState<boolean>(false);
+  const [isArtDirectorModalOpen, setIsArtDirectorModalOpen] = useState<boolean>(false);
+  const [isWebIntelModalOpen, setIsWebIntelModalOpen] = useState<boolean>(false);
+  const [showWelcomeScreen, setShowWelcomeScreen] = useState<boolean>(true);
 
   // Loading states
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
   const [isBgGenerating, setIsBgGenerating] = useState<boolean>(false);
+
+  // Web & Social Media Live Intelligence State
+  const [webIntel, setWebIntel] = useState<WebSocialIntelResult | null>(null);
+  const [isWebIntelLoading, setIsWebIntelLoading] = useState<boolean>(false);
+  const [autoSearchIntel, setAutoSearchIntel] = useState<boolean>(true);
 
   // Saved posters in local memory
   const [savedPosters, setSavedPosters] = useState<SavedPoster[]>(() => {
@@ -92,12 +110,24 @@ export default function App() {
     }
   });
 
-  // Save to localStorage when savedPosters change
+  // Save to localStorage when savedPosters change with quota safety
   useEffect(() => {
     try {
       localStorage.setItem('ai_poster_saved_designs', JSON.stringify(savedPosters));
-    } catch (e) {
-      console.error('Failed to save to localStorage:', e);
+    } catch (e: any) {
+      console.warn('Failed to save full designs to localStorage, attempting quota recovery:', e);
+      try {
+        // If quota exceeded, retain recent 10 items with lightweight thumbnails
+        const compacted = savedPosters.slice(0, 10).map(item => ({
+          ...item,
+          thumbnailUrl: item.thumbnailUrl && item.thumbnailUrl.length > 50000 
+            ? '' // omit oversize thumbnail string to preserve critical design data
+            : item.thumbnailUrl
+        }));
+        localStorage.setItem('ai_poster_saved_designs', JSON.stringify(compacted));
+      } catch (innerErr) {
+        console.error('Critical localStorage error:', innerErr);
+      }
     }
   }, [savedPosters]);
 
@@ -122,6 +152,17 @@ export default function App() {
   // Update design handler
   const handleUpdateDesign = (updated: Partial<PosterDesignState>) => {
     setDesign((prev) => ({ ...prev, ...updated }));
+  };
+
+  // Select Preset handler (with smart layout adaptation support)
+  const handleSelectPreset = (newPreset: PosterPreset, forceAutoAdapt?: boolean) => {
+    setDesign((prev) => {
+      const shouldAdapt = forceAutoAdapt !== undefined ? forceAutoAdapt : (prev.autoAdaptLayout ?? true);
+      if (shouldAdapt) {
+        return applyLayoutAdjustments(prev, newPreset);
+      }
+      return { ...prev, preset: newPreset };
+    });
   };
 
   // Update event details handler
@@ -235,16 +276,22 @@ export default function App() {
   // Save poster to local library
   const handleSaveToLibrary = async () => {
     try {
-      const thumbUrl = await exportPosterToPng(1);
+      let thumbUrl = '';
+      try {
+        thumbUrl = await exportPosterToPng(0.75);
+      } catch (thumbErr) {
+        console.warn('Thumbnail export failed, saving state without thumbnail:', thumbErr);
+      }
+
       const newSavedItem: SavedPoster = {
         id: `poster-${Date.now()}`,
-        title: design.details.title || 'Untitled Poster',
+        title: design.details.title || design.details.event || 'Untitled Poster',
         dateCreated: new Date().toISOString(),
         thumbnailUrl: thumbUrl,
-        designState: design,
+        designState: { ...design },
       };
 
-      setSavedPosters((prev) => [newSavedItem, ...prev]);
+      setSavedPosters((prev) => [newSavedItem, ...prev.filter(item => item.id !== newSavedItem.id)]);
     } catch (err) {
       console.error('Failed to save poster:', err);
     }
@@ -258,6 +305,62 @@ export default function App() {
   // Load saved poster
   const handleLoadPoster = (item: SavedPoster) => {
     setDesign(item.designState);
+  };
+
+  // Web & Social Media Live Research Handler
+  const handleSearchWebIntel = async (detailsToSearch?: EventDetails, forceRefresh: boolean = false) => {
+    const targetDetails = detailsToSearch || design.details;
+    if (!targetDetails.event && !targetDetails.title && !targetDetails.artist1 && !targetDetails.venue) {
+      return;
+    }
+
+    try {
+      setIsWebIntelLoading(true);
+      const result = await fetchWebSocialIntelligence(targetDetails, forceRefresh);
+      if (result) {
+        setWebIntel(result);
+      }
+    } catch (err) {
+      console.error('Failed to search web & social intelligence:', err);
+    } finally {
+      setIsWebIntelLoading(false);
+    }
+  };
+
+  // Apply all inspiration from web intelligence
+  const handleApplyAllIntelInspiration = (intelToApply?: WebSocialIntelResult) => {
+    const intel = intelToApply || webIntel;
+    if (!intel) return;
+
+    setDesign((prev) => applyFullInspirationToDesign(prev, intel));
+  };
+
+  // Apply specific components from web intelligence
+  const handleApplyIntelPalette = (intel: WebSocialIntelResult) => {
+    if (intel.inspiration?.customPalette) {
+      setDesign((prev) => ({
+        ...prev,
+        palette: intel.inspiration!.customPalette!,
+      }));
+    }
+  };
+
+  const handleApplyIntelBackdropPrompt = (prompt: string) => {
+    setDesign((prev) => ({
+      ...prev,
+      bgPrompt: prompt,
+      bgType: 'ai_image',
+    }));
+  };
+
+  const handleApplyIntelTagline = (tagline: string) => {
+    setDesign((prev) => ({
+      ...prev,
+      details: {
+        ...prev.details,
+        subtitle: tagline,
+      },
+    }));
   };
 
   // Template Selection Handler
@@ -307,18 +410,36 @@ export default function App() {
     setIsTemplateModalOpen(false);
   };
 
+  // Handle applying custom dimensions & pre-render style
+  const handleApplyCustomSizeAndStyle = (
+    preset: PosterPreset,
+    styleUpdates?: Partial<PosterDesignState>,
+    immediateExport: boolean = false
+  ) => {
+    setDesign((prev) => ({
+      ...prev,
+      preset,
+      ...(styleUpdates || {}),
+    }));
+    setIsCustomSizeModalOpen(false);
+    if (immediateExport) {
+      setIsExportModalOpen(true);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       
       {/* Top Navbar */}
       <Navbar
         currentPreset={design.preset}
-        onSelectPreset={(preset) => setDesign((prev) => ({ ...prev, preset }))}
+        onSelectPreset={handleSelectPreset}
         weather={design.weather}
         onOpenQuickPrompt={() => setIsQuickPromptOpen(true)}
         onOpenSavedPosters={() => setIsSavedModalOpen(true)}
         onOpenExport={() => setIsExportModalOpen(true)}
         onOpenTemplates={() => setIsTemplateModalOpen(true)}
+        onOpenWeatherWelcome={() => setShowWelcomeScreen(true)}
         savedCount={savedPosters.length}
       />
 
@@ -362,12 +483,16 @@ export default function App() {
             <PosterCanvas
               design={design}
               onDesignChange={handleUpdateDesign}
+              onOpenArtDirector={() => setIsArtDirectorModalOpen(true)}
             />
 
             {/* Format Ratio Selector Bar */}
             <PresetSelector
               currentPreset={design.preset}
-              onSelectPreset={(preset) => setDesign((prev) => ({ ...prev, preset }))}
+              design={design}
+              onSelectPreset={handleSelectPreset}
+              onUpdateDesign={handleUpdateDesign}
+              onOpenCustomSizeModal={() => setIsCustomSizeModalOpen(true)}
             />
 
           </div>
@@ -393,6 +518,14 @@ export default function App() {
               onOpenTemplates={() => setIsTemplateModalOpen(true)}
               onOpenSavedPosters={() => setIsSavedModalOpen(true)}
               savedCount={savedPosters.length}
+              onOpenArtDirectorModal={() => setIsArtDirectorModalOpen(true)}
+              webIntel={webIntel}
+              isWebIntelLoading={isWebIntelLoading}
+              autoSearchIntel={autoSearchIntel}
+              onToggleAutoSearchIntel={() => setAutoSearchIntel((prev) => !prev)}
+              onSearchWebIntel={handleSearchWebIntel}
+              onOpenWebIntelModal={() => setIsWebIntelModalOpen(true)}
+              onApplyAllIntelInspiration={handleApplyAllIntelInspiration}
             />
 
           </div>
@@ -409,12 +542,35 @@ export default function App() {
         isLoading={isAiLoading}
       />
 
+      {/* Live Web & Social Media Intelligence Deep-Dive Modal */}
+      <WebSocialIntelModal
+        isOpen={isWebIntelModalOpen}
+        onClose={() => setIsWebIntelModalOpen(false)}
+        intel={webIntel}
+        isLoading={isWebIntelLoading}
+        onRefreshSearch={() => handleSearchWebIntel(design.details, true)}
+        onApplyAllInspiration={handleApplyAllIntelInspiration}
+        onApplyPalette={handleApplyIntelPalette}
+        onApplyBackdropPrompt={handleApplyIntelBackdropPrompt}
+        onApplyTagline={handleApplyIntelTagline}
+      />
+
       {/* PNG Export Modal */}
       <ExportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         design={design}
         onSaveToLibrary={handleSaveToLibrary}
+        onUpdateDesign={handleUpdateDesign}
+        onOpenCustomSizeModal={() => setIsCustomSizeModalOpen(true)}
+      />
+
+      {/* Custom Size & Style Pre-Render Studio Modal */}
+      <CustomSizeModal
+        isOpen={isCustomSizeModalOpen}
+        onClose={() => setIsCustomSizeModalOpen(false)}
+        currentDesign={design}
+        onApplyCustomSizeAndStyle={handleApplyCustomSizeAndStyle}
       />
 
       {/* Saved Posters Gallery Modal */}
@@ -433,6 +589,22 @@ export default function App() {
         onSelectTemplate={handleSelectTemplate}
         currentDetails={design.details}
       />
+
+      {/* Art Director AI & Snob-Proof Inspector Modal */}
+      <ArtDirectorInspectorModal
+        isOpen={isArtDirectorModalOpen}
+        onClose={() => setIsArtDirectorModalOpen(false)}
+        design={design}
+        onDesignChange={handleUpdateDesign}
+      />
+
+      {/* Atmospheric Weather-Inspired Loading & Voice Welcome Screen */}
+      {showWelcomeScreen && (
+        <WeatherWelcomeScreen
+          onEnterApp={() => setShowWelcomeScreen(false)}
+          defaultCity={design.details.location || 'Global Vibes'}
+        />
+      )}
 
     </div>
   );

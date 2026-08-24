@@ -1,18 +1,45 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import QRCode from 'qrcode';
 import { toPng, toBlob } from 'html-to-image';
-import { Calendar, Clock, MapPin, Ticket, Sun, CloudRain, Sunset, Snowflake, Zap, Moon, Sparkles, QrCode } from 'lucide-react';
+import { 
+  Calendar, 
+  Clock, 
+  MapPin, 
+  Ticket, 
+  Sun, 
+  CloudRain, 
+  Sunset, 
+  Snowflake, 
+  Zap, 
+  Moon, 
+  Sparkles, 
+  QrCode, 
+  ShieldCheck, 
+  Wand2, 
+  Layers, 
+  CheckCircle2, 
+  AlertTriangle 
+} from 'lucide-react';
 import { PosterDesignState } from '../types';
+import { runArtDirectorAudit, snobProofAndSanitizePoster } from '../utils/artDirectorEngine';
 
 interface PosterCanvasProps {
   design: PosterDesignState;
   onDesignChange?: (updated: Partial<PosterDesignState>) => void;
   isExporting?: boolean;
+  onOpenArtDirector?: () => void;
 }
 
-export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
+export const PosterCanvas: React.FC<PosterCanvasProps> = ({ 
+  design, 
+  onDesignChange, 
+  onOpenArtDirector 
+}) => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+
+  // Live background Art Director audit
+  const audit = useMemo(() => runArtDirectorAudit(design), [design]);
 
   // Generate QR Code data URL when link changes
   useEffect(() => {
@@ -70,19 +97,57 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
     borderClass = 'relative before:absolute before:inset-2 before:border-2 before:border-dashed before:border-amber-400/50';
   }
 
+  // Quick 1-click polish trigger
+  const handleQuickPolish = () => {
+    if (onDesignChange) {
+      onDesignChange(snobProofAndSanitizePoster(design));
+    }
+  };
+
   return (
     <div className="w-full bg-neutral-900 rounded-3xl border border-neutral-800 p-4 sm:p-6 relative flex flex-col items-center justify-center shadow-2xl overflow-hidden">
       
-      {/* Top Status Badge */}
-      <div className="w-full flex items-center justify-between mb-4 px-1">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 bg-indigo-500 rounded-full animate-ping"></span>
-          <span className="text-xs uppercase tracking-widest font-bold text-neutral-500">
-            Live Canvas Preview
+      {/* Top Status & Art Director AI HUD Bar */}
+      <div className="w-full flex flex-wrap items-center justify-between gap-2 mb-4 px-1">
+        
+        {/* Discreet Art Director Guard Badge */}
+        <button
+          onClick={onOpenArtDirector}
+          className="group flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-950/90 hover:bg-neutral-950 border border-neutral-800 hover:border-emerald-500/50 transition-all shadow-md"
+          title="Open Background Art Director Inspection & Snob-Proof Engine"
+        >
+          <div className={`w-2 h-2 rounded-full ${
+            audit.overallScore >= 90 
+              ? 'bg-emerald-400 animate-pulse' 
+              : audit.overallScore >= 75 
+              ? 'bg-amber-400' 
+              : 'bg-rose-400 animate-ping'
+          }`} />
+          <span className="text-[11px] font-bold text-neutral-300 group-hover:text-white flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>AI Art Director:</span>
+            <span className={audit.overallScore >= 85 ? 'text-emerald-400 font-extrabold' : 'text-amber-400 font-extrabold'}>
+              {audit.snobProofConfidence}% Snob-Proof
+            </span>
           </span>
-        </div>
-        <div className="bg-neutral-950/80 backdrop-blur-md text-[10px] text-neutral-400 px-3 py-1 rounded-full border border-neutral-800 uppercase tracking-widest font-mono">
-          {preset.name} ({preset.aspectRatioLabel})
+        </button>
+
+        {/* Action Controls & Preset Pill */}
+        <div className="flex items-center gap-2">
+          {audit.overallScore < 95 && (
+            <button
+              onClick={handleQuickPolish}
+              className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 transition-all"
+              title="1-Click AI Sanitize & Snob-Proof Polish"
+            >
+              <Wand2 className="w-3 h-3" />
+              <span>Polish</span>
+            </button>
+          )}
+
+          <div className="bg-neutral-950/80 backdrop-blur-md text-[10px] text-neutral-400 px-3 py-1 rounded-full border border-neutral-800 uppercase tracking-widest font-mono">
+            {preset.name} ({preset.aspectRatioLabel})
+          </div>
         </div>
       </div>
       
@@ -99,24 +164,94 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
           style={{
             fontFamily: bodyFontFamily,
             color: palette.primaryText,
-            background: design.bgType === 'ai_image' && design.bgImageUrl
-              ? `url(${design.bgImageUrl}) center/cover no-repeat`
-              : design.bgType === 'upload' && design.bgImageUrl
-              ? `url(${design.bgImageUrl}) center/cover no-repeat`
-              : palette.bgGradient,
+            background: palette.bgGradient,
+            letterSpacing: design.opticalKerning ? '0.02em' : 'normal',
             ...borderInlineStyle
           }}
         >
-          
+          {/* Background Image Layer if present */}
+          {design.bgImageUrl && (design.bgType === 'ai_image' || design.bgType === 'upload') && (
+            <img
+              src={design.bgImageUrl}
+              alt="Poster background"
+              crossOrigin="anonymous"
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none z-0"
+              style={{
+                filter: design.blurAmount > 0 ? `blur(${design.blurAmount}px)` : 'none'
+              }}
+            />
+          )}
+
           {/* Background Overlay Layer for Contrast */}
           <div
             className="absolute inset-0 pointer-events-none z-0 transition-opacity"
             style={{
               backgroundColor: palette.bgColor,
               opacity: design.overlayOpacity,
-              backdropFilter: design.blurAmount > 0 ? `blur(${design.blurAmount}px)` : 'none'
+              backdropFilter: design.blurAmount > 0 && !design.bgImageUrl ? `blur(${design.blurAmount}px)` : 'none'
             }}
           />
+
+          {/* ANTI-AI TACTILE MICROTEXTURE GRAIN OVERLAYS (Eliminates synthetic plastic glow) */}
+          {design.antiAiTexture === 'risograph' && (
+            <div 
+              className="absolute inset-0 pointer-events-none z-1 opacity-25 mix-blend-overlay"
+              style={{
+                backgroundImage: `radial-gradient(circle at 1px 1px, #ffffff 1px, transparent 0), radial-gradient(circle at 3px 3px, #000000 1px, transparent 0)`,
+                backgroundSize: '4px 4px, 6px 6px'
+              }}
+            />
+          )}
+
+          {design.antiAiTexture === 'matte_grain' && (
+            <div 
+              className="absolute inset-0 pointer-events-none z-1 opacity-20 mix-blend-multiply"
+              style={{
+                backgroundImage: `radial-gradient(#111 0.75px, transparent 0.75px), radial-gradient(#eee 0.75px, transparent 0.75px)`,
+                backgroundPosition: '0 0, 2px 2px',
+                backgroundSize: '3px 3px'
+              }}
+            />
+          )}
+
+          {design.antiAiTexture === 'analog_film' && (
+            <div 
+              className="absolute inset-0 pointer-events-none z-1 opacity-15 mix-blend-overlay"
+              style={{
+                backgroundImage: `radial-gradient(#ffffff 0.5px, transparent 0.5px)`,
+                backgroundSize: '2px 2px'
+              }}
+            />
+          )}
+
+          {design.antiAiTexture === 'halftone' && (
+            <div 
+              className="absolute inset-0 pointer-events-none z-1 opacity-10 mix-blend-color-burn"
+              style={{
+                backgroundImage: `radial-gradient(#000000 1.5px, transparent 1.5px)`,
+                backgroundSize: '8px 8px'
+              }}
+            />
+          )}
+
+          {design.antiAiTexture === 'recycled_paper' && (
+            <div 
+              className="absolute inset-0 pointer-events-none z-1 opacity-20 mix-blend-soft-light"
+              style={{
+                backgroundImage: `repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0, rgba(255,255,255,0.05) 1px, transparent 0, transparent 50%)`,
+                backgroundSize: '6px 6px'
+              }}
+            />
+          )}
+
+          {/* Interactive 0.125" Bleed Safe Margin Guide Overlay */}
+          {design.printBleedGuideVisible && (
+            <div className="absolute inset-3 border-2 border-dashed border-cyan-400/70 pointer-events-none z-30 flex items-start justify-end p-1">
+              <span className="bg-cyan-500 text-black font-mono font-black text-[7px] px-1 rounded uppercase tracking-tighter">
+                0.125" SAFE PRINT MARGIN
+              </span>
+            </div>
+          )}
 
           {/* Decorative Background Noise / Gradients */}
           {design.showGridOverlay && (
@@ -129,11 +264,27 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
             />
           )}
 
-          {/* TOP BAR: Badges, Category, Weather Forecast */}
-          <div className="relative z-10 p-5 sm:p-7 flex items-start justify-between gap-3 w-full">
+          {/* TOP BAR: Promoter microtype, Badges, Category, Weather Forecast */}
+          <div className={`relative z-10 w-full transition-all ${
+            design.layoutDensity === 'compact' 
+              ? 'p-3 sm:p-4' 
+              : design.layoutDensity === 'spacious' 
+              ? 'p-6 sm:p-8' 
+              : 'p-4 sm:p-6'
+          } ${
+            design.badgePosition === 'top_center'
+              ? 'flex flex-col items-center justify-center gap-2'
+              : design.badgePosition === 'top_left_stacked'
+              ? 'flex flex-col items-start gap-2'
+              : design.badgePosition === 'inline_compact'
+              ? 'flex flex-row items-center justify-between gap-2'
+              : 'flex items-start justify-between gap-3'
+          }`}>
             
-            {/* Left Badges */}
-            <div className="flex flex-col gap-2 items-start">
+            {/* Category / Custom Badge */}
+            <div className={`flex flex-wrap items-center gap-2 ${
+              design.badgePosition === 'top_center' ? 'justify-center' : 'items-start'
+            }`}>
               {design.showCategoryBadge && details.category && (
                 <span
                   className="px-3 py-1 rounded-full text-[11px] font-black tracking-widest uppercase shadow-md transition-transform"
@@ -239,12 +390,24 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
 
           </div>
 
-          {/* BOTTOM SECTION: Date, Time, Venue */}
-          <div className="relative z-10 p-5 sm:p-7 w-full flex flex-col gap-3 sm:gap-4">
+          {/* BOTTOM SECTION: Date, Time, Venue & Venue Credibility Footer */}
+          <div className={`relative z-10 w-full flex flex-col transition-all ${
+            design.layoutDensity === 'compact'
+              ? 'p-3 sm:p-4 gap-2'
+              : design.layoutDensity === 'spacious'
+              ? 'p-6 sm:p-8 gap-3'
+              : 'p-4 sm:p-6 gap-2.5'
+          }`}>
             
             {/* Main Info Card Container */}
             <div
-              className="p-4 sm:p-5 rounded-2xl border backdrop-blur-md shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4"
+              className={`rounded-2xl border backdrop-blur-md shadow-xl flex flex-col sm:flex-row items-center justify-between transition-all ${
+                design.layoutDensity === 'compact'
+                  ? 'p-3 gap-2 sm:gap-3'
+                  : design.layoutDensity === 'spacious'
+                  ? 'p-5 sm:p-6 gap-4'
+                  : 'p-4 sm:p-5 gap-4'
+              }`}
               style={{
                 backgroundColor: palette.cardBg,
                 borderColor: palette.borderColor
@@ -330,6 +493,41 @@ export const PosterCanvas: React.FC<PosterCanvasProps> = ({ design }) => {
               </div>
             )}
 
+            {/* VENUE INDUSTRY CREDIBILITY BAR (Authentic Promoter Lockup, 18+ R.O.A.R & Security Barcode) */}
+            {design.venueCredibilityBar !== false && (
+              <div 
+                className="w-full pt-1 pb-0.5 px-2 flex flex-col sm:flex-row items-center justify-between gap-1.5 border-t text-[8px] tracking-tight opacity-75 font-mono"
+                style={{ borderColor: `${palette.borderColor}40`, color: palette.secondaryText }}
+              >
+                <div className="flex flex-col items-center sm:items-start text-center sm:text-left leading-tight">
+                  <span className="font-bold uppercase tracking-wider text-[8px]" style={{ color: palette.primaryText }}>
+                    {design.promoterText || 'PRESENTED IN COLLABORATION WITH THE UNDERGROUND SOUND ARCHIVE'}
+                  </span>
+                  <span className="opacity-70 text-[7px] uppercase tracking-tighter">
+                    {design.venueLegalNotice || 'STRICTLY 18+ • R.O.A.R • ZERO TOLERANCE • CASHLESS VENUE'}
+                  </span>
+                </div>
+
+                {design.showBarcode !== false && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Authentic Vector Barcode */}
+                    <div className="flex items-end gap-[1.5px] h-3.5 px-1 py-0.5 bg-black/40 rounded border border-white/10">
+                      <div className="w-[1.5px] h-full bg-white"></div>
+                      <div className="w-[1px] h-2.5 bg-white"></div>
+                      <div className="w-[2px] h-full bg-white"></div>
+                      <div className="w-[1px] h-2 bg-white"></div>
+                      <div className="w-[1.5px] h-full bg-white"></div>
+                      <div className="w-[1px] h-2.5 bg-white"></div>
+                      <div className="w-[2px] h-full bg-white"></div>
+                      <div className="w-[1.5px] h-2 bg-white"></div>
+                      <div className="w-[1px] h-full bg-white"></div>
+                    </div>
+                    <span className="text-[7px] font-mono tracking-widest text-neutral-400">#AUTH-PASS</span>
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
 
         </div>
@@ -347,6 +545,15 @@ export async function exportPosterToPng(dpiScale: number = 2): Promise<string> {
     throw new Error('Poster canvas element not found');
   }
 
+  // Ensure all web fonts are fully loaded before capturing
+  try {
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+  } catch (fontErr) {
+    console.warn('Font loading check skipped:', fontErr);
+  }
+
   try {
     const dataUrl = await toPng(canvasElement, {
       pixelRatio: dpiScale,
@@ -357,11 +564,18 @@ export async function exportPosterToPng(dpiScale: number = 2): Promise<string> {
     return dataUrl;
   } catch (err: any) {
     console.warn('html-to-image toPng initial attempt failed, trying fallback:', err);
-    const dataUrl = await toPng(canvasElement, {
-      pixelRatio: 1.5,
-      cacheBust: false,
-    });
-    return dataUrl;
+    try {
+      const dataUrl = await toPng(canvasElement, {
+        pixelRatio: Math.max(1, dpiScale * 0.75),
+        cacheBust: false,
+      });
+      return dataUrl;
+    } catch (fallbackErr) {
+      return await toPng(canvasElement, {
+        pixelRatio: 1,
+        cacheBust: false,
+      });
+    }
   }
 }
 
@@ -370,6 +584,14 @@ export async function exportPosterToBlob(dpiScale: number = 2): Promise<Blob> {
   const canvasElement = document.getElementById('poster-render-canvas');
   if (!canvasElement) {
     throw new Error('Poster canvas element not found');
+  }
+
+  try {
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+  } catch (fontErr) {
+    console.warn('Font loading check skipped:', fontErr);
   }
 
   try {
@@ -387,3 +609,4 @@ export async function exportPosterToBlob(dpiScale: number = 2): Promise<Blob> {
     return await res.blob();
   }
 }
+
